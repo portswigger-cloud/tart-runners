@@ -42,6 +42,9 @@ class FakeTart:
     def configure(self, name, cpu, memory_gb):
         pass
 
+    def mac(self, name):
+        return "aa:bb:cc:dd:ee:ff"
+
     def run(self, name, log):
         self.calls.append(("run", name))
         return Process()
