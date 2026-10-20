@@ -1,4 +1,3 @@
-import json
 import logging
 import os
 import plistlib
@@ -6,7 +5,6 @@ import pwd
 import shutil
 import subprocess
 import sys
-import time
 from pathlib import Path
 
 from . import config as configuration
@@ -18,7 +16,6 @@ log = logging.getLogger(__name__)
 
 KEEP_RELEASES = 3
 PATH = "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-TARTELET = Path("/Applications/Tartelet.app")
 COMMAND = Path("/usr/local/bin/tart-runners")
 DAEMONS = Path("/Library/LaunchDaemons")
 
@@ -36,7 +33,6 @@ def install(user, config_path, release, wait):
     _write_if_changed(COMMAND, _command().encode(), 0o755)
     _prune_releases()
     _configure_host()
-    _remove_tartelet(account)
 
     for directory in (paths.state_dir(home), paths.log_dir(home)):
         directory.mkdir(parents=True, exist_ok=True)
@@ -120,32 +116,6 @@ def _configure_host():
             "bootpd", "-dict", "DHCPLeaseTimeSecs", "-int", "600",
         ],
         check=True,
-    )
-
-
-def _remove_tartelet(account):
-    if not TARTELET.exists():
-        return
-    log.info("removing Tartelet")
-    _as_user(account, "osascript", "-e", 'quit app "Tartelet"')
-    for _ in range(60):
-        if subprocess.run(["pgrep", "-x", "Tartelet"], capture_output=True).returncode != 0:
-            break
-        time.sleep(1)
-    # Tartelet's VMs count towards the two-VM licence limit, so they would block ours.
-    vms = json.loads(_as_user(account, "tart", "list", "--format", "json").stdout or "[]")
-    for vm in vms:
-        if vm.get("Running") and not vm["Name"].startswith("tart-runners-"):
-            _as_user(account, "tart", "stop", vm["Name"])
-    shutil.rmtree(TARTELET)
-
-
-def _as_user(account, *command):
-    return subprocess.run(
-        ["launchctl", "asuser", str(account.pw_uid), "sudo", "-u", account.pw_name, "-H",
-         "env", f"PATH={PATH}", *command],
-        capture_output=True,
-        text=True,
     )
 
 

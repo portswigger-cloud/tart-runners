@@ -34,7 +34,7 @@ sudo ./install.sh <user> config.toml
 ```
 
 This installs Python and Tart with Homebrew, copies the code to `/Library/Application Support/tart-runners`, keeps the
-Mac awake, shortens the VM DHCP lease, removes Tartelet if present, and loads one launch daemon per slot, running as the user. It also installs a `tart-runners` command. It then waits
+Mac awake, shortens the VM DHCP lease, and loads one launch daemon per slot, running as the user. It also installs a `tart-runners` command. It then waits
 up to ten minutes for every slot to have a runner online, and exits non-zero if they don't.
 
 Rerunning it is safe. A slot picks up a new release or config after its current job, so jobs aren't interrupted.
