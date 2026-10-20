@@ -1,0 +1,26 @@
+# Every host reads the same file; [hosts.<LocalHostName>] overrides apply to one host.
+
+[github]
+organization = "my-org"
+app_id = 123456
+private_key = "~/github.pem"   # relative to the runner user's home
+runner_group = "Default"
+labels = ["macos-arm64"]       # self-hosted, macOS and ARM64 are always added
+
+[vm]
+image = "ghcr.io/cirruslabs/macos-tahoe-xcode:latest"
+insecure = false               # true for a plain-HTTP registry
+username = "admin"
+password = "admin"
+# cpu = 4
+# memory_gb = 8
+
+[runner]
+version = "latest"             # or pin, e.g. "2.337.0"
+
+[host]
+slots = "auto"                 # 2 on hosts with 24GB or more, else 1; 0 drains a host
+max_vm_hours = 24
+
+[hosts.big-mini]
+labels = ["macos-arm64", "large"]
