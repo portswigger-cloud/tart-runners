@@ -46,6 +46,8 @@ def main(argv=None):
 def _run(args):
     from .slot import Slot
 
+    # launchd stops services with SIGTERM; raising lets the slot tear its VM down on the way out.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     home = Path.home()
     slot = Slot(configuration.load(args.config, home=home), args.config, args.slot, home)
     if args.once:
@@ -59,8 +61,6 @@ def _run(args):
     handler = RotatingFileHandler(log_dir / f"slot-{args.slot}.log", maxBytes=10 * 1024**2, backupCount=3)
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
     logging.basicConfig(level=logging.INFO, handlers=[handler])
-    # launchd stops services with SIGTERM; raising lets the slot tear its VM down on the way out.
-    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     slot.run_forever()
     return 0
 
