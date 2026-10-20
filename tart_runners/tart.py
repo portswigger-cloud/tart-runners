@@ -1,5 +1,6 @@
 import json
 import subprocess
+from pathlib import Path
 
 
 class TartError(Exception):
@@ -32,6 +33,10 @@ class Tart:
             stdout=log,
             stderr=subprocess.STDOUT,
         )
+
+    def mac(self, name):
+        config = Path.home() / ".tart/vms" / name / "config.json"
+        return json.loads(config.read_text()).get("macAddress")
 
     def ip(self, name, wait):
         address = self._run("ip", name, "--wait", str(wait), timeout=wait + 30).strip()

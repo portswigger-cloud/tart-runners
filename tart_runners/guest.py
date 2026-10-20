@@ -1,7 +1,10 @@
+import logging
 import os
 import subprocess
 import time
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 ASKPASS = Path(__file__).with_name("askpass.sh")
 
@@ -59,6 +62,7 @@ class Guest:
                 self.run("true", timeout=20)
                 return
             except GuestError as e:
+                log.debug("SSH to %s not up yet: %s", self.ip, e)
                 if vm.poll() is not None:
                     raise GuestError(f"VM exited with {vm.returncode} before SSH came up") from e
                 if time.monotonic() > deadline:

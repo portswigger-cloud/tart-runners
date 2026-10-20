@@ -19,6 +19,7 @@ def main(argv=None):
     run = commands.add_parser("run", help="run one VM slot until the code or config changes")
     run.add_argument("--slot", type=int, choices=range(1, MAX_SLOTS + 1), required=True)
     run.add_argument("--config", type=Path, default=paths.CONFIG)
+    run.add_argument("--once", action="store_true", help="make one attempt, logging each step to stderr")
 
     check_ = commands.add_parser("check", help="exit non-zero unless every slot has a runner online")
     check_.add_argument("--config", type=Path, default=paths.CONFIG)
@@ -46,6 +47,13 @@ def _run(args):
     from .slot import Slot
 
     home = Path.home()
+    slot = Slot(configuration.load(args.config, home=home), args.config, args.slot, home)
+    if args.once:
+        logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+        slot.state.mkdir(parents=True, exist_ok=True)
+        slot.logs.mkdir(parents=True, exist_ok=True)
+        slot.run_once()
+        return 0
     log_dir = paths.log_dir(home)
     log_dir.mkdir(parents=True, exist_ok=True)
     handler = RotatingFileHandler(log_dir / f"slot-{args.slot}.log", maxBytes=10 * 1024**2, backupCount=3)
@@ -53,7 +61,7 @@ def _run(args):
     logging.basicConfig(level=logging.INFO, handlers=[handler])
     # launchd stops services with SIGTERM; raising lets the slot tear its VM down on the way out.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-    Slot(configuration.load(args.config, home=home), args.config, args.slot, home).run_forever()
+    slot.run_forever()
     return 0
 
 

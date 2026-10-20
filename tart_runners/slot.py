@@ -84,15 +84,20 @@ class Slot:
         with self._lock("clone"):
             self.tart.clone(self.config.vm.image, self.vm, self.config.vm.insecure)
         self.tart.configure(self.vm, self.config.vm.cpu, self.config.vm.memory_gb)
+        log.debug("cloned %s with MAC %s", self.vm, self.tart.mac(self.vm))
 
         self._status("booting")
         runner_id = None
         with open(self.logs / f"vm-{self.slot}.log", "ab") as vm_log:
             vm = self.tart.run(self.vm, vm_log)
             try:
-                guest = Guest(self.tart.ip(self.vm, BOOT_TIMEOUT), self.config.vm.username, self.config.vm.password)
+                ip = self.tart.ip(self.vm, BOOT_TIMEOUT)
+                log.debug("%s has IP %s", self.vm, ip)
+                guest = Guest(ip, self.config.vm.username, self.config.vm.password)
                 guest.wait_until_reachable(BOOT_TIMEOUT, vm)
+                log.debug("SSH to %s is up", ip)
                 guest.install_runner(tarball)
+                log.debug("installed %s", tarball.name)
                 name = runner_name(self.config.host, self.slot)
                 runner_id, jit_config = self.github.jit_config(name, self.config.github.labels, group_id)
                 log.info("registered runner %s", name)
