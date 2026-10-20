@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Usage: sudo ./install.sh <user> <config.toml>
+# Usage: sudo ./install.sh <user> <config.toml> [seconds to wait for runners, default 600]
 # Safe to rerun: running jobs finish before slots pick up a new release or config.
 set -euo pipefail
 
 user=${1:?usage: install.sh <user> <config.toml>}
 config=${2:?usage: install.sh <user> <config.toml>}
+wait=${3:-600}
 [[ $EUID -eq 0 ]] || { echo "install.sh must run as root" >&2; exit 1; }
 
 uid=$(id -u "$user")
@@ -32,4 +33,4 @@ if [[ ! -d $release ]]; then
   mv "$staging" "$release"
 fi
 
-PYTHONPATH="$release" exec "$python" -m tart_runners install --user "$user" --config "$config" --release "$release"
+PYTHONPATH="$release" exec "$python" -m tart_runners install --user "$user" --config "$config" --release "$release" --wait "$wait"
