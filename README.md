@@ -27,14 +27,14 @@ the host, at the path in `github.private_key`.
 
 ## Install
 
-On a Mac with Homebrew, logged in as the user the runners will run as:
+On a Mac with Homebrew, for the user the runners will run as:
 
 ```
 sudo ./install.sh <user> config.toml
 ```
 
 This installs Python and Tart with Homebrew, copies the code to `/Library/Application Support/tart-runners`, keeps the
-Mac awake, shortens the VM DHCP lease, removes Tartelet if present, and loads one launch agent per slot. It also installs a `tart-runners` command. It then waits
+Mac awake, shortens the VM DHCP lease, removes Tartelet if present, and loads one launch daemon per slot, running as the user. It also installs a `tart-runners` command. It then waits
 up to ten minutes for every slot to have a runner online, and exits non-zero if they don't.
 
 Rerunning it is safe. A slot picks up a new release or config after its current job, so jobs aren't interrupted.

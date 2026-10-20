@@ -11,7 +11,7 @@ from pathlib import Path
 
 from . import config as configuration
 from . import paths
-from .check import agent_label, agent_loaded, check
+from .check import check, daemon_label, daemon_loaded
 from .config import MAX_SLOTS
 
 log = logging.getLogger(__name__)
@@ -20,6 +20,7 @@ KEEP_RELEASES = 3
 PATH = "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 TARTELET = Path("/Applications/Tartelet.app")
 COMMAND = Path("/usr/local/bin/tart-runners")
+DAEMONS = Path("/Library/LaunchDaemons")
 
 
 def install(user, config_path, release, wait):
@@ -37,21 +38,28 @@ def install(user, config_path, release, wait):
     _configure_host()
     _remove_tartelet(account)
 
-    for directory in (paths.state_dir(home), paths.log_dir(home), home / "Library/LaunchAgents"):
+    for directory in (paths.state_dir(home), paths.log_dir(home)):
         directory.mkdir(parents=True, exist_ok=True)
         os.chown(directory, account.pw_uid, account.pw_gid)
     for slot in range(1, MAX_SLOTS + 1):
-        _sync_agent(account, home, slot, enabled=slot <= config.slots)
+        _sync_daemon(account, slot, enabled=slot <= config.slots)
 
-    return check(config, home, uid=account.pw_uid, wait=wait)
+    return check(config, home, services=True, wait=wait)
 
 
-def agent(slot, home):
+def daemon(slot, account):
+    """A launchd daemon running as the user, rather than an agent in their login session.
+
+    Local Network privacy blocks unapproved apps such as Homebrew's Python and Tart from
+    reaching the LAN, including the image registry, but doesn't apply to launchd daemons.
+    """
+    home = Path(account.pw_dir)
     logs = paths.log_dir(home)
     return {
-        "Label": agent_label(slot),
+        "Label": daemon_label(slot),
+        "UserName": account.pw_name,
         "ProgramArguments": [sys.executable, "-m", "tart_runners", "run", "--slot", str(slot)],
-        "EnvironmentVariables": {"PATH": PATH, "PYTHONPATH": str(paths.CURRENT)},
+        "EnvironmentVariables": {"PATH": PATH, "PYTHONPATH": str(paths.CURRENT), "HOME": str(home)},
         "WorkingDirectory": str(home),
         "RunAtLoad": True,
         "KeepAlive": True,
@@ -63,22 +71,22 @@ def agent(slot, home):
     }
 
 
-def _sync_agent(account, home, slot, enabled):
-    path = home / "Library/LaunchAgents" / f"{agent_label(slot)}.plist"
-    domain = f"gui/{account.pw_uid}"
+def _sync_daemon(account, slot, enabled):
+    label = daemon_label(slot)
+    path = DAEMONS / f"{label}.plist"
     if not enabled:
-        if agent_loaded(account.pw_uid, slot):
-            _launchctl("bootout", f"{domain}/{agent_label(slot)}")
+        if daemon_loaded(slot):
+            _launchctl("bootout", f"system/{label}")
         path.unlink(missing_ok=True)
         return
-    changed = _write_if_changed(path, plistlib.dumps(agent(slot, home)), 0o644, account)
-    loaded = agent_loaded(account.pw_uid, slot)
+    changed = _write_if_changed(path, plistlib.dumps(daemon(slot, account)), 0o644)
+    loaded = daemon_loaded(slot)
     if changed and loaded:
-        log.info("reloading slot %s, its launch agent changed", slot)
-        _launchctl("bootout", f"{domain}/{agent_label(slot)}")
+        log.info("reloading slot %s, its launch daemon changed", slot)
+        _launchctl("bootout", f"system/{label}")
         loaded = False
     if not loaded:
-        _launchctl("bootstrap", domain, str(path))
+        _launchctl("bootstrap", "system", str(path))
 
 
 def _command():

@@ -5,27 +5,25 @@ from .github import GitHub
 from .slot import read_status
 
 
-def agent_label(slot):
+def daemon_label(slot):
     return f"tart-runners.slot-{slot}"
 
 
-def agent_loaded(uid, slot):
-    return subprocess.run(
-        ["launchctl", "print", f"gui/{uid}/{agent_label(slot)}"], capture_output=True
-    ).returncode == 0
+def daemon_loaded(slot):
+    return subprocess.run(["launchctl", "print", f"system/{daemon_label(slot)}"], capture_output=True).returncode == 0
 
 
-def check(config, home, uid=None, wait=0, github=None, sleep=time.sleep):
+def check(config, home, services=False, wait=0, github=None, sleep=time.sleep):
     """Return the reasons this host isn't serving its runners; empty when it is."""
     github = github or GitHub(config.github.organization, config.github.app_id, config.github.private_key)
     try:
         github.token()
     except Exception as e:
         return [f"can't authenticate as the GitHub App: {e}"]
-    if uid is not None:
-        unloaded = [s for s in range(1, config.slots + 1) if not agent_loaded(uid, s)]
+    if services:
+        unloaded = [s for s in range(1, config.slots + 1) if not daemon_loaded(s)]
         if unloaded:
-            return [f"slot {s} launch agent isn't loaded" for s in unloaded]
+            return [f"slot {s} launch daemon isn't loaded" for s in unloaded]
 
     deadline = time.monotonic() + wait
     while True:

@@ -1,6 +1,5 @@
 import argparse
 import logging
-import os
 import pwd
 import signal
 import sys
@@ -52,20 +51,15 @@ def _run(args):
     handler = RotatingFileHandler(log_dir / f"slot-{args.slot}.log", maxBytes=10 * 1024**2, backupCount=3)
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
     logging.basicConfig(level=logging.INFO, handlers=[handler])
-    # launchd stops agents with SIGTERM; raising lets the slot tear its VM down on the way out.
+    # launchd stops services with SIGTERM; raising lets the slot tear its VM down on the way out.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     Slot(configuration.load(args.config, home=home), args.config, args.slot, home).run_forever()
     return 0
 
 
 def _check(args):
-    home, uid = Path.home(), None
-    if args.user:
-        account = pwd.getpwnam(args.user)
-        home, uid = Path(account.pw_dir), account.pw_uid
-    elif os.geteuid() != 0:
-        uid = os.getuid()
-    return _report(check(configuration.load(args.config, home=home), home, uid=uid, wait=args.wait))
+    home = Path(pwd.getpwnam(args.user).pw_dir) if args.user else Path.home()
+    return _report(check(configuration.load(args.config, home=home), home, services=True, wait=args.wait))
 
 
 def _validate(args):
