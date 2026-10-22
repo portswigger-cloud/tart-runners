@@ -24,6 +24,11 @@ tap() {
 
 [[ -x $brew ]] || { echo "Homebrew is required at $brew" >&2; exit 1; }
 
+# Homebrew 7 refuses formulas from untrusted taps, and naming tart only trusts tart, not its softnet dependency.
+# Trust both before removing anything, so a refusal can't leave the host without tart.
+as_user_brew tap openai/tools
+as_user_brew trust --quiet --formula openai/tools/tart openai/tools/softnet
+
 # Tart moved from Cirrus Labs to OpenAI, and the old tap's formulas no longer get updates.
 # Running VMs keep their binary, and slots retry if they call tart mid-swap.
 for formula in tart softnet; do
