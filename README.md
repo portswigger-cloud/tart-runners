@@ -44,9 +44,14 @@ Rerunning it is safe. A slot picks up a new release or config after its current 
 
 ```
 tart-runners check                                 # are this host's runners online?
+tart-runners disable --reason "flaky disk"         # stop taking jobs; running jobs finish first
+tart-runners enable                                # start taking jobs again
 tail -f ~/Library/Logs/tart-runners/slot-1.log    # slot log
 tail -f ~/Library/Logs/tart-runners/vm-1.log      # tart and runner output
 ```
+
+A disabled host deregisters idle runners within a minute and lets busy ones finish their job. Until it's enabled,
+`check` fails straight away with the reason, so the installer fails fast too. It survives restarts and reinstalls.
 
 A slot that fails retries with backoff, up to five minutes. Its last state is in
 `~/Library/Application Support/tart-runners/slot-<n>.json`, and `check` prints it.

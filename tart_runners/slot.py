@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import paths
-from .github import GitHub
+from .github import GitHub, GitHubError
 from .guest import Guest, GuestError
 from .releases import RunnerReleases, sha256
 from .tart import Tart
@@ -19,6 +19,7 @@ log = logging.getLogger(__name__)
 BACKOFF = (10, 30, 60, 120, 300)
 BOOT_TIMEOUT = 180
 POLL = 5
+DRAIN_RETRY = 60
 
 
 def vm_name(slot):
@@ -41,6 +42,7 @@ class Slot:
         self.config = config
         self.config_path = Path(config_path)
         self.slot = slot
+        self.home = Path(home)
         self.vm = vm_name(slot)
         self.state = paths.state_dir(home)
         self.logs = paths.log_dir(home)
@@ -57,6 +59,11 @@ class Slot:
         self._remove_vm()
         failures = 0
         while not self._outdated():
+            reason = paths.disabled(self.home)
+            if reason is not None:
+                self._status("disabled", reason)
+                time.sleep(POLL)
+                continue
             if self.slot > self.config.slots:
                 self._status("disabled", f"host has {self.config.slots} slots")
                 time.sleep(60)
@@ -102,7 +109,7 @@ class Slot:
                 runner_id, jit_config = self.github.jit_config(name, self.config.github.labels, group_id)
                 log.info("registered runner %s", name)
                 self._status("ready", name)
-                self._wait(guest.start_runner(jit_config, vm_log), vm)
+                self._wait(guest.start_runner(jit_config, vm_log), vm, runner_id)
             finally:
                 if runner_id is not None:
                     try:
@@ -111,8 +118,9 @@ class Slot:
                         log.warning("can't deregister runner %s: %s", runner_id, e)
                 self._stop(vm)
 
-    def _wait(self, runner, vm):
+    def _wait(self, runner, vm, runner_id):
         deadline = time.monotonic() + self.config.max_vm_hours * 3600
+        drain_at = 0
         while runner.poll() is None:
             if vm.poll() is not None:
                 runner.terminate()
@@ -121,10 +129,24 @@ class Slot:
                 log.warning("VM up for %s hours, tearing it down", self.config.max_vm_hours)
                 runner.terminate()
                 return
+            if time.monotonic() >= drain_at and paths.disabled(self.home) is not None:
+                drain_at = time.monotonic() + DRAIN_RETRY
+                if self._deregister_if_idle(runner_id):
+                    log.info("host disabled, stopped the idle runner")
+                    runner.terminate()
+                    return
             time.sleep(POLL)
         if runner.returncode != 0:
             raise GuestError(f"runner exited with {runner.returncode}")
         log.info("runner finished")
+
+    def _deregister_if_idle(self, runner_id):
+        # GitHub refuses to delete a runner that's running a job, so a busy runner finishes it first.
+        try:
+            self.github.delete_runner(runner_id)
+        except GitHubError:
+            return False
+        return True
 
     def _stop(self, vm):
         try:

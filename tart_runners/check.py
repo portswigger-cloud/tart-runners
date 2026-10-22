@@ -1,6 +1,7 @@
 import subprocess
 import time
 
+from . import paths
 from .github import GitHub
 from .slot import read_status
 
@@ -15,6 +16,9 @@ def daemon_loaded(slot):
 
 def check(config, home, services=False, wait=0, github=None, sleep=time.sleep):
     """Return the reasons this host isn't serving its runners; empty when it is."""
+    reason = paths.disabled(home)
+    if reason is not None:
+        return [f"disabled {reason}; `tart-runners enable` brings it back", *_slot_states(home, config.slots)]
     github = github or GitHub(config.github.organization, config.github.app_id, config.github.private_key)
     try:
         github.token()
@@ -34,15 +38,19 @@ def check(config, home, services=False, wait=0, github=None, sleep=time.sleep):
             break
         sleep(30)
 
-    problems = [f"{len(online)} of {config.slots} runners online for {config.host}"]
-    for slot in range(1, config.slots + 1):
+    return [f"{len(online)} of {config.slots} runners online for {config.host}", *_slot_states(home, config.slots)]
+
+
+def _slot_states(home, slots):
+    states = []
+    for slot in range(1, slots + 1):
         status = read_status(home, slot)
         if status:
             detail = f": {status['detail']}" if status["detail"] else ""
-            problems.append(f"slot {slot}: {status['state']}{detail} (at {status['updated']})")
+            states.append(f"slot {slot}: {status['state']}{detail} (at {status['updated']})")
         else:
-            problems.append(f"slot {slot}: hasn't started")
-    return problems
+            states.append(f"slot {slot}: hasn't started")
+    return states
 
 
 def _online_runners(github, host):
