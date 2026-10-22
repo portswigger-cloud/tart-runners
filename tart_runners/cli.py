@@ -28,6 +28,8 @@ def main(argv=None):
 
     validate = commands.add_parser("validate", help="validate a config file")
     validate.add_argument("config", type=Path)
+    validate.add_argument("--cores", type=int, help="validate for another Mac's core count")
+    validate.add_argument("--memory-gb", type=int, help="validate for another Mac's memory")
 
     install = commands.add_parser("install", help="install a release; run by install.sh")
     install.add_argument("--user", required=True)
@@ -71,8 +73,13 @@ def _check(args):
 
 
 def _validate(args):
-    config = configuration.load(args.config)
-    print(f"{args.config}: ok, {config.slots} slot(s) for {config.host} with labels {', '.join(config.github.labels)}")
+    hardware = configuration.host_hardware()
+    hardware = (args.cores or hardware[0], args.memory_gb or hardware[1])
+    config = configuration.load(args.config, hardware=hardware)
+    print(
+        f"{args.config}: ok, {config.slots} slot(s) of {config.vm.cpu} CPU and {config.vm.memory_gb}GB"
+        f" for {config.host} with labels {', '.join(config.github.labels)}"
+    )
     return 0
 
 

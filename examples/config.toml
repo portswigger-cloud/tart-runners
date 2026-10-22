@@ -1,4 +1,5 @@
-# Every host reads the same file; [hosts.<LocalHostName>] overrides apply to one host.
+# Every host reads the same file. Each Mac uses the [machines] entry matching its cores and memory,
+# and refuses to start without one, so a new kind of Mac needs an entry here first.
 
 [github]
 organization = "my-org"
@@ -12,15 +13,28 @@ image = "ghcr.io/cirruslabs/macos-tahoe-xcode:latest"
 insecure = false               # true for a plain-HTTP registry
 username = "admin"
 password = "admin"
-# cpu = 4
-# memory_gb = 8
 
 [runner]
 version = "latest"             # or pin, e.g. "2.337.0"
 
 [host]
-slots = "auto"                 # 2 on hosts with 24GB or more, else 1; 0 drains a host
 max_vm_hours = 24
 
-[hosts.big-mini]
-labels = ["macos-arm64", "large"]
+[machines.m4-pro-48gb]
+cores = 12
+memory_gb = 48
+slots = 2                      # at most 2, Apple's licence limit; 0 drains every Mac of this kind
+vm = { cpu = 6, memory_gb = 22 }
+labels = ["large"]             # added to github.labels
+
+[machines.m2-24gb]
+cores = 8
+memory_gb = 24
+slots = 2
+vm = { cpu = 4, memory_gb = 10 }
+
+[machines.m1-16gb]
+cores = 8
+memory_gb = 16
+slots = 2
+vm = { cpu = 4, memory_gb = 7 }

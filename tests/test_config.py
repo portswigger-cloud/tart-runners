@@ -2,15 +2,15 @@ import tomllib
 import unittest
 from pathlib import Path
 
-from tart_runners.config import ConfigError, TWO_SLOT_MEMORY, parse
+from tart_runners.config import ConfigError, parse
 
 EXAMPLE = Path(__file__).parent.parent / "examples/config.toml"
 HOME = Path("/Users/runner")
 
 
-def load(text=None, host="mini", memory=TWO_SLOT_MEMORY):
+def load(text=None, host="mini", hardware=(8, 24)):
     data = tomllib.loads(text) if text is not None else tomllib.loads(EXAMPLE.read_text())
-    return parse(data, home=HOME, host=host, memory=memory)
+    return parse(data, home=HOME, host=host, hardware=hardware)
 
 
 MINIMAL = """
@@ -21,6 +21,11 @@ private_key = "~/key.pem"
 labels = ["a"]
 [vm]
 image = "registry/image:tag"
+[machines.m2]
+cores = 8
+memory_gb = 24
+slots = 2
+vm = { cpu = 4, memory_gb = 10 }
 """
 
 
@@ -29,7 +34,7 @@ class ConfigTest(unittest.TestCase):
         config = load()
         self.assertEqual(config.github.private_key, HOME / "github.pem")
         self.assertEqual(config.github.labels, ("self-hosted", "macOS", "ARM64", "macos-arm64"))
-        self.assertEqual(config.slots, 2)
+        self.assertEqual((config.slots, config.vm.cpu, config.vm.memory_gb), (2, 4, 10))
 
     def test_defaults(self):
         config = load(MINIMAL)
@@ -39,20 +44,27 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(config.runner_version, "latest")
         self.assertEqual(config.max_vm_hours, 24)
 
-    def test_auto_slots_follow_memory(self):
-        self.assertEqual(load(MINIMAL, memory=16 * 1024**3).slots, 1)
-        self.assertEqual(load(MINIMAL, memory=TWO_SLOT_MEMORY).slots, 2)
+    def test_machine_is_chosen_by_cores_and_memory(self):
+        config = load(hardware=(12, 48))
+        self.assertEqual((config.slots, config.vm.cpu, config.vm.memory_gb), (2, 6, 22))
+        self.assertEqual(config.github.labels, ("self-hosted", "macOS", "ARM64", "macos-arm64", "large"))
+        self.assertEqual(load(hardware=(8, 16)).vm.memory_gb, 7)
 
-    def test_host_override(self):
-        text = MINIMAL + '[hosts.Big]\nlabels = ["b"]\nslots = 1\n'
-        config = load(text, host="big")
-        self.assertEqual(config.github.labels, ("self-hosted", "macOS", "ARM64", "b"))
-        self.assertEqual(config.slots, 1)
-        self.assertEqual(load(text, host="other").slots, 2)
+    def test_rejects_an_unknown_machine(self):
+        with self.assertRaisesRegex(ConfigError, "no \\[machines\\] entry for a Mac with 14 cores and 48GB"):
+            load(hardware=(14, 48))
+
+    def test_rejects_two_entries_for_one_machine(self):
+        with self.assertRaisesRegex(ConfigError, "more than one"):
+            load(MINIMAL + "[machines.again]\ncores = 8\nmemory_gb = 24\nslots = 1\nvm = { cpu = 8, memory_gb = 20 }\n")
 
     def test_rejects_more_slots_than_the_licence_allows(self):
         with self.assertRaisesRegex(ConfigError, "slots"):
-            load(MINIMAL + "[host]\nslots = 3\n")
+            load(MINIMAL.replace("slots = 2", "slots = 3"))
+
+    def test_rejects_vms_that_use_all_the_memory(self):
+        with self.assertRaisesRegex(ConfigError, "leave the host no memory"):
+            load(MINIMAL.replace("memory_gb = 10", "memory_gb = 12"))
 
     def test_rejects_unknown_keys(self):
         with self.assertRaisesRegex(ConfigError, "unknown keys: imge"):

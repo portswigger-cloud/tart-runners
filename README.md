@@ -13,13 +13,14 @@ It's plain Python 3.11+ with no dependencies, inspired by [Sand](https://github.
 
 ## Configuration
 
-One declarative TOML file describes the whole fleet. See [`examples/config.toml`](examples/config.toml). Hosts are
-matched by `LocalHostName`, and a `[hosts.<name>]` table can override `labels` and `slots` for one host.
+One declarative TOML file describes the whole fleet. See [`examples/config.toml`](examples/config.toml). Each kind of
+Mac has a `[machines.<name>]` entry giving its slots, VM size and extra labels, picked by matching the host's cores and
+memory exactly. A Mac with no matching entry refuses to install, so a new kind of Mac gets sized on purpose.
 
 Unknown keys are errors, so a typo fails the install rather than being ignored. Check a file with:
 
 ```
-python3 -m tart_runners validate config.toml
+python3 -m tart_runners validate config.toml --cores 12 --memory-gb 48
 ```
 
 The GitHub App needs the organization permission *Self-hosted runners: read and write*. Its private key stays on
