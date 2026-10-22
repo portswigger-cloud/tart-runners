@@ -72,9 +72,12 @@ class Guest:
     def install_runner(self, tarball):
         with open(tarball, "rb") as f:
             self.run(f"cat > {RUNNER_TARBALL}", stdin=f, timeout=300)
+        # Jobs take their PATH from .path. SSH gives the runner a non-login shell, which
+        # skips ~/.zprofile, where the image puts Homebrew; without this, jobs can't find gh.
         self.run(
             f"rm -rf actions-runner && mkdir actions-runner"
-            f" && tar -xzf {RUNNER_TARBALL} -C actions-runner && rm {RUNNER_TARBALL}",
+            f" && tar -xzf {RUNNER_TARBALL} -C actions-runner && rm {RUNNER_TARBALL}"
+            f" && /bin/zsh -lc 'echo $PATH' > actions-runner/.path",
             timeout=300,
         )
 
