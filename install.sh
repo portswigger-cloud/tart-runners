@@ -17,7 +17,7 @@ src=$(cd "$(dirname "$0")" && pwd)
 [[ -x $brew ]] || { echo "Homebrew is required at $brew" >&2; exit 1; }
 missing=()
 [[ -x $python ]] || missing+=(python@3.13)
-[[ -x /opt/homebrew/bin/tart ]] || missing+=(cirruslabs/cli/tart)
+[[ -x /opt/homebrew/bin/tart ]] || missing+=(openai/tools/tart)
 if (( ${#missing[@]} )); then
   launchctl asuser "$uid" sudo -u "$user" -H env HOMEBREW_NO_INSTALL_UPGRADE=1 "$brew" install --quiet "${missing[@]}"
 fi
