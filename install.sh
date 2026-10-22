@@ -14,12 +14,30 @@ python=/opt/homebrew/opt/python@3.13/bin/python3.13
 root="/Library/Application Support/tart-runners"
 src=$(cd "$(dirname "$0")" && pwd)
 
+as_user_brew() {
+  launchctl asuser "$uid" sudo -u "$user" -H env HOMEBREW_NO_INSTALL_UPGRADE=1 "$brew" "$@"
+}
+
+tap() {
+  plutil -extract source.tap raw "/opt/homebrew/opt/$1/INSTALL_RECEIPT.json" 2>/dev/null || true
+}
+
 [[ -x $brew ]] || { echo "Homebrew is required at $brew" >&2; exit 1; }
+
+# Tart moved from Cirrus Labs to OpenAI, and the old tap's formulas no longer get updates.
+# Running VMs keep their binary, and slots retry if they call tart mid-swap.
+for formula in tart softnet; do
+  old_tap=$(tap "$formula")
+  if [[ -n $old_tap && $old_tap != openai/tools ]]; then
+    as_user_brew uninstall --quiet --ignore-dependencies "$formula"
+  fi
+done
+
 missing=()
 [[ -x $python ]] || missing+=(python@3.13)
 [[ -x /opt/homebrew/bin/tart ]] || missing+=(openai/tools/tart)
 if (( ${#missing[@]} )); then
-  launchctl asuser "$uid" sudo -u "$user" -H env HOMEBREW_NO_INSTALL_UPGRADE=1 "$brew" install --quiet "${missing[@]}"
+  as_user_brew install --quiet "${missing[@]}"
 fi
 
 version=$(cd "$src" && find tart_runners -type f -not -name '*.pyc' | LC_ALL=C sort | xargs shasum -a 256 | shasum -a 256 | cut -c1-12)
