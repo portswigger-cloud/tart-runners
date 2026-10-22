@@ -3,8 +3,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from tart_runners import slot as slot_module
+from tart_runners import paths, slot as slot_module
 from tart_runners.config import GitHub as GitHubConfig, VM, Config
+from tart_runners.github import GitHubError
 from tart_runners.guest import GuestError
 from tart_runners.slot import Slot, read_status, runner_name
 
@@ -27,10 +28,32 @@ class Process:
     kill = terminate
 
 
+class Job(Process):
+    """A runner that stays up until terminated, or until it has been polled `polls` times."""
+
+    def __init__(self, polls=None):
+        super().__init__()
+        self.polls = polls
+        self.terminated = False
+
+    def poll(self):
+        if self.terminated:
+            self.returncode = -15
+        elif self.polls is not None:
+            self.polls -= 1
+            if self.polls < 0:
+                self.returncode = 0
+        return self.returncode
+
+    def terminate(self):
+        self.terminated = True
+
+
 class FakeTart:
     def __init__(self):
         self.vms = set()
         self.calls = []
+        self.vm = None
 
     def exists(self, name):
         return name in self.vms
@@ -47,7 +70,7 @@ class FakeTart:
 
     def run(self, name, log):
         self.calls.append(("run", name))
-        return Process()
+        return self.vm or Process()
 
     def ip(self, name, wait):
         return "192.168.64.2"
@@ -64,6 +87,7 @@ class FakeGitHub:
     def __init__(self):
         self.deleted = []
         self.registered = []
+        self.running = None
 
     def token(self):
         return "ghs_x"
@@ -76,12 +100,15 @@ class FakeGitHub:
         return 99, "jit"
 
     def delete_runner(self, runner_id):
+        if self.running is not None and self.running.returncode is None:
+            raise GitHubError(422, "runner is still running a job")
         self.deleted.append(runner_id)
 
 
 class FakeGuest:
     runner_exit = 0
     fail_on = None
+    job = None
 
     def __init__(self, ip, username, password):
         pass
@@ -94,7 +121,7 @@ class FakeGuest:
         self.tarball = tarball
 
     def start_runner(self, jit_config, log):
-        return Process(self.runner_exit)
+        return self.job or Process(self.runner_exit)
 
 
 def config(slots=2):
@@ -119,12 +146,15 @@ class SlotTest(unittest.TestCase):
         patches = [
             mock.patch.object(slot_module, "Guest", FakeGuest),
             mock.patch.object(slot_module.RunnerReleases, "tarball", return_value=self.home / "runner.tar.gz"),
+            mock.patch.object(slot_module.time, "sleep"),
+            mock.patch.object(slot_module, "DRAIN_RETRY", 0),
         ]
         for patch in patches:
             patch.start()
             self.addCleanup(patch.stop)
         FakeGuest.runner_exit = 0
         FakeGuest.fail_on = None
+        FakeGuest.job = None
 
     def tearDown(self):
         self.dir.cleanup()
@@ -164,6 +194,38 @@ class SlotTest(unittest.TestCase):
         self.assertFalse(s._outdated())
         self.config_path.write_text("y")
         self.assertTrue(s._outdated())
+
+    def disable(self):
+        paths.disabled_marker(self.home).write_text("since now: flaky\n")
+
+    def test_disabling_stops_an_idle_runner(self):
+        s = self.slot()
+        self.tart.vm = Job()
+        FakeGuest.job = Job()
+        self.disable()
+        s.run_once()
+        self.assertTrue(FakeGuest.job.terminated)
+        self.assertEqual(self.github.deleted, [99, 99])
+        self.assertEqual(self.tart.vms, set())
+
+    def test_disabling_lets_a_busy_runner_finish_its_job(self):
+        s = self.slot()
+        self.tart.vm = Job()
+        FakeGuest.job = self.github.running = Job(polls=3)
+        self.disable()
+        s.run_once()
+        self.assertFalse(FakeGuest.job.terminated)
+        self.assertEqual(FakeGuest.job.returncode, 0)
+        self.assertEqual(self.tart.vms, set())
+
+    def test_a_disabled_slot_boots_nothing(self):
+        s = self.slot()
+        self.disable()
+        with mock.patch.object(Slot, "_outdated", side_effect=[False, False, True]):
+            s.run_forever()
+        self.assertNotIn("clone", [call[0] for call in self.tart.calls])
+        status = read_status(self.home, 1)
+        self.assertEqual((status["state"], status["detail"]), ("disabled", "since now: flaky"))
 
     def test_runner_names_are_unique_per_boot(self):
         self.assertNotEqual(runner_name("Mini", 1), runner_name("Mini", 1))

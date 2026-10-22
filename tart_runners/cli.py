@@ -1,8 +1,10 @@
 import argparse
 import logging
+import os
 import pwd
 import signal
 import sys
+from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -25,6 +27,13 @@ def main(argv=None):
     check_.add_argument("--config", type=Path, default=paths.CONFIG)
     check_.add_argument("--user", help="the user the runners run as, when checking as root")
     check_.add_argument("--wait", type=int, default=0, help="seconds to wait for runners to come online")
+
+    disable = commands.add_parser("disable", help="stop this Mac taking jobs once its running jobs finish")
+    disable.add_argument("--reason", help="shown by check, and so in the installer's output")
+    disable.add_argument("--user", help="the user the runners run as, when running as root")
+
+    enable = commands.add_parser("enable", help="undo disable")
+    enable.add_argument("--user", help="the user the runners run as, when running as root")
 
     validate = commands.add_parser("validate", help="validate a config file")
     validate.add_argument("config", type=Path)
@@ -72,6 +81,30 @@ def _check(args):
     return _report(check(configuration.load(args.config, home=home), home, services=True, wait=args.wait))
 
 
+def _disable(args):
+    marker = paths.disabled_marker(_runner_home(args))
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    since = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    marker.write_text(f"since {since}" + (f": {args.reason}" if args.reason else "") + "\n")
+    print("disabled: idle runners stop within a minute, busy ones after their current job")
+    return 0
+
+
+def _enable(args):
+    paths.disabled_marker(_runner_home(args)).unlink(missing_ok=True)
+    print("enabled: slots start taking jobs again within a few seconds")
+    return 0
+
+
+def _runner_home(args):
+    if args.user:
+        return Path(pwd.getpwnam(args.user).pw_dir)
+    # Root's home would be the wrong place, and the slots would never see the change.
+    if os.geteuid() == 0:
+        raise SystemExit("running as root: pass --user with the user the runners run as")
+    return Path.home()
+
+
 def _validate(args):
     hardware = configuration.host_hardware()
     hardware = (args.cores or hardware[0], args.memory_gb or hardware[1])
@@ -98,4 +131,11 @@ def _report(problems):
     return 1 if problems else 0
 
 
-COMMANDS = {"run": _run, "check": _check, "validate": _validate, "install": _install}
+COMMANDS = {
+    "run": _run,
+    "check": _check,
+    "disable": _disable,
+    "enable": _enable,
+    "validate": _validate,
+    "install": _install,
+}
