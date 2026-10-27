@@ -72,8 +72,8 @@ class Guest:
     def install_runner(self, tarball):
         with open(tarball, "rb") as f:
             self.run(f"cat > {RUNNER_TARBALL}", stdin=f, timeout=300)
-        # Jobs take their PATH from .path. SSH gives the runner a non-login shell, which
-        # skips ~/.zprofile, where the image puts Homebrew; without this, jobs can't find gh.
+        # SSH gives the runner a non-login shell, which skips ~/.zprofile, where the image puts
+        # Homebrew. Save the login-shell PATH for start_runner; without it, jobs can't find gh.
         self.run(
             f"rm -rf actions-runner && mkdir actions-runner"
             f" && tar -xzf {RUNNER_TARBALL} -C actions-runner && rm {RUNNER_TARBALL}"
@@ -82,9 +82,14 @@ class Guest:
         )
 
     def start_runner(self, jit_config, log):
-        # The config goes over stdin so it never appears in the host's process list.
+        # The config goes over stdin so it never appears in the host's process list. Jobs
+        # inherit the runner's PATH, and run.sh doesn't read .path (only the runner's service
+        # wrapper, runsvc.sh, does), so set it here as runsvc.sh would.
         process = subprocess.Popen(
-            self._ssh('read -r config && exec actions-runner/run.sh --jitconfig "$config"'),
+            self._ssh(
+                "read -r config && PATH=$(cat actions-runner/.path)"
+                ' && exec actions-runner/run.sh --jitconfig "$config"'
+            ),
             stdin=subprocess.PIPE,
             stdout=log,
             stderr=subprocess.STDOUT,
